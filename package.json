@@ -1,0 +1,48 @@
+{
+  "name": "pbui-client",
+  "version": "0.1.2",
+  "description": "This is a WIP package for Heggo and Ultraslayyy's PBUI tool for Beat Saber Tournaments.",
+  "keywords": [
+    "pbui",
+    "typescript",
+    "api",
+    "client"
+  ],
+  "license": "GPL-3.0-only",
+  "contributors": [
+    {
+        "name": "Ultraslayyy",
+        "email": "ultra@ultraslayyy.xyz",
+        "url": "https://github.com/ultraslayyy"
+    },
+    {
+        "name": "Heggo",
+        "email": "heggo@heggo.dev",
+        "url": "https://github.com/Heggol"
+    }
+  ],
+  "homepage": "https://pbui.net",
+  "bugs": {
+    "url": "https://github.com/Heggol/PBUI/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Heggol/PBUI.git"
+  },
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "main": "dist/index.cjs",
+  "exports": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs.js"
+    },
+    "require": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.cjs"
+    }
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}
