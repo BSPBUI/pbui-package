@@ -1,6 +1,6 @@
 {
   "name": "pbui-client",
-  "version": "0.1.2",
+  "version": "0.1.2-beta.0",
   "description": "This is a WIP package for Heggo and Ultraslayyy's PBUI tool for Beat Saber Tournaments.",
   "keywords": [
     "pbui",
@@ -9,25 +9,27 @@
     "client"
   ],
   "license": "GPL-3.0-only",
+  "author": "BSPBUI",
   "contributors": [
     {
-        "name": "Ultraslayyy",
-        "email": "ultra@ultraslayyy.xyz",
-        "url": "https://github.com/ultraslayyy"
+      "name": "Ultraslayyy",
+      "email": "ultraslay@pbui.net",
+      "url": "https://github.com/ultraslayyy"
     },
     {
-        "name": "Heggo",
-        "email": "heggo@heggo.dev",
-        "url": "https://github.com/Heggol"
+      "name": "Heggo",
+      "email": "heggo@pbui.net",
+      "url": "https://github.com/Heggol"
     }
   ],
   "homepage": "https://pbui.net",
   "bugs": {
-    "url": "https://github.com/Heggol/PBUI/issues"
+    "url": "https://github.com/BSPBUI/pbui-package/issues",
+    "email": "contact@pbui.net"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Heggol/PBUI.git"
+    "url": "git+https://github.com/BSPBUI/pbui-package.git"
   },
   "type": "module",
   "types": "dist/index.d.ts",

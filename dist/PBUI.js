@@ -1,11 +1,13 @@
 import { io } from 'socket.io-client';
+import { Response_ResponseTypes } from './Response_ResponseTypes';
 
 class PBUI {
     constructor() {
         this.socket = null;
         this.apiBaseURL = 'https://api.pbui.net';
+        this.apiEndpoint = '/api';
         this.listeners = {};
-        this.state = new PBUIState(this.apiBaseURL);
+        this.state = new PBUIState(this.apiBaseURL, this.apiEndpoint);
         this.reconnectionAttempts = 0;
         this.heartbeatInterval = null;
         this.connecting = false;
@@ -20,13 +22,15 @@ class PBUI {
         this.connecting = true;
         try {
             await this._disconnectIfConnected();
-            await this._establishConnection(options);
+            this.connectionPromise = this._establishConnection(options);
             this._startHeartbeat();
         } catch (error) {
             console.error('[PBUI] Connection failed:', error);
             this._reconnect();
+            throw error;
         }
 
+        this._cleanupSocket();
         this._setupEventHandlers();
         return this.connectionPromise;
     }
@@ -68,7 +72,7 @@ class PBUI {
 
     async _ensureConnected() {
         if (this.connecting) await this.connectionPromise;
-        if (!this.socket.connected) throw new Error('[PBUI] Websocket not connected. Call connect() first.');
+        if (!this.socket || !this.socket.connected) throw new Error('[PBUI] Websocket not connected.');
     }
 
     _setupEventHandlers() {
@@ -113,7 +117,7 @@ class PBUI {
     }
 
     _reconnect() {
-        if (this.reconnectionAttempts >= 10 || this.connecting) {
+        if (this.reconnectionAttempts >= 10) {
             console.error('[PBUI] Max reconnection attempts reached or already reconnecting.');
             return;
         }
@@ -215,24 +219,34 @@ class PBUI {
 
     _triggerListeners(event, data) {
         if (this.listeners[event]) {
-            this.listeners[event].forEach(listener => listener(data.json()));
+            this.listeners[event].forEach(listener => listener(data));
         }
     }
 
-    setApiBase(url) {
+    setApiBase(url, endpoint = '/api') {
         if (!url) {
-            console.error('[PBUI] URL not provided to set as ApiBase.');
+            console.error('[PBUI] URL not provided to set as apiBase.');
             return;
         }
-        this.apiBaseURL = url;
+        try {
+            new URL(url);
+            this.apiBaseURL = url;
+        } catch (error) {
+            console.log(`[PBUI] Invalid URL:`, url);
+        }
+        if (!endpoint.startsWith('/')) {
+            console.error(`[PBUI] apiBase endpoint must start with '/'`);
+            return;
+        }
+        this.apiEndpoint = endpoint;
     }
 }
 
 class PBUIState {
-    constructor(apiBaseURL) {
+    constructor(url, endpoint = '/api') {
         this.data = {};
         this.listeners = {};
-        this.apiBaseURL = `${apiBaseURL}/api` || 'https://api.pbui.net/api';
+        this.apiBaseURL = url ? `${url}${endpoint}` : 'https://api.pbui.net/api';
         this.defaultHeaders = { 'Content-Type': 'application/json' };
     }
 
@@ -263,7 +277,37 @@ class PBUIState {
         return true;
     }
 
-    async fetchData(endpoint, method = 'GET', body = null) {
+    _parseXML(xmlString) {
+        const parser = new DOMParser();
+        try {
+            const xmlDoc = parser.parseFromString(xmlString, "application/xml");
+            // Check for parsing errors
+            const parseError = xmlDoc.getElementsByTagName("parsererror");
+            if (parseError.length > 0) {
+                throw new Error("Error parsing XML: " + parseError[0].textContent);
+            }
+            return xmlDoc;
+        } catch (error) {
+            console.error('[PBUI] XML Parsing error:', error);
+            throw error;
+        }
+    }
+
+    async _handleResponses(response) {
+        const contentType = response.headers.get('Content-Type') || '';
+        if (contentType.includes(Response_ResponseTypes.JSON)) {
+            return await response.json();
+        } else if (contentType.includes(Response_ResponseTypes.XML)) {
+            const text = await response.text();
+            return this._parseXML(text);
+        } else if (contentType.includes(Response_ResponseTypes.TEXT)) {
+            return await response.text();
+        } else {
+            throw new Error(`[PBUI] Unsupported response type: ${contentType}`);
+        }
+    }
+
+    async _fetchData(endpoint, method = 'GET', body = null) {
         const url = `${this.apiBaseURL}${endpoint}`;
         const options = {
             method,
@@ -276,7 +320,8 @@ class PBUIState {
             if (!response.ok) {
                 throw new Error(`[PBUI] HTTP error! Status: ${response.status}`);
             }
-            return await response.json();
+            
+            return this._handleResponses(response);
         } catch (error) {
             console.error(`[PBUI] Failed to fetch ${endpoint}`);
             throw error;
@@ -287,7 +332,7 @@ class PBUIState {
         if (key === 'state') {
             if (!this.data[key] || forceFetch) {
                 console.log('[PBUI] Fetching state...');
-                const data = await this.fetchData('/state');
+                const data = await this._fetchData('/state');
                 console.log(`[PBUI] State fetched:`, data)
                 this._internalUpdate(key, data);
             }
@@ -309,13 +354,13 @@ class PBUIState {
         }
 
         const body = { song_states: songStates, current_flow_step: currentFlowStep };
-        const data = await this.fetchData('/update', 'POST', body);
-        return data.success;
+        const data = await this._fetchData('/update', 'POST', body);
+        return Boolean(data.success);
     }
 
     async reset() {
         console.log('[PBUI] Resetting state...');
-        const data = await this.fetchData('/reset', 'POST');
+        const data = await this._fetchData('/reset', 'POST');
         console.log('[PBUI] State successfully reset!');
         return data.success;
     }

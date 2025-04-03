@@ -1,6 +1,6 @@
 import { SongState } from './songState';
 
-export declare class PBUIState {
+declare class PBUIState {
     update(songStates: { [bsr: string]: SongState }, currentFlowStep: number): Promise<void>;
     get<T>(key: string): T | undefined;
     reset(): Promise<void>;
@@ -15,7 +15,7 @@ export declare class PBUI {
     disconnect(): Promise<void>;
     on(event: string, callback: (data: any) => void): void;
     send(event: string, data:any): void;
-    setApiBase(url: string): void;
+    setApiBase(url: string, endpoint?: string): void;
 }
 
 export default PBUI;
