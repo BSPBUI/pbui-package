@@ -1,13 +1,16 @@
 import { io } from 'socket.io-client';
 import { Response_ResponseTypes } from './Response_ResponseTypes';
 
+const apiUrl = 'https://api.ultraslayyy.xyz/api';
+const slugRegex = /^[a-z0-9_-]+$/;
+
 class PBUI {
     constructor() {
         this.socket = null;
-        this.apiBaseURL = 'https://api.pbui.net';
-        this.apiEndpoint = '/api';
+        this.authToken = '';
         this.listeners = {};
-        this.state = new PBUIState(this.apiBaseURL, this.apiEndpoint);
+        this.state = new PBUIState();
+        this.tournaments = new Tournaments(this.authToken);
         this.reconnectionAttempts = 0;
         this.heartbeatInterval = null;
         this.connecting = false;
@@ -45,7 +48,7 @@ class PBUI {
 
     async _establishConnection(options) {
         return new Promise((resolve, reject) => {
-            this.socket = io(this.apiBaseURL, {
+            this.socket = io(apiUrl, {
                 transports: ['websocket'],
                 secure: true,
                 rejectUnauthorized: process.env.NODE_ENV === 'development' ? false : true,
@@ -55,7 +58,7 @@ class PBUI {
             });
 
             this.socket.once('connect', () => {
-                console.log(`[PBUI] Connected to WebSocket: ${this.apiBaseURL}`);
+                console.log(`[PBUI] Connected to WebSocket: ${apiUrl}`);
                 this.connecting = false;
                 this.reconnectionAttempts = 0;
                 this._startHeartbeat();
@@ -84,7 +87,7 @@ class PBUI {
             console.warn(`[PBUI] Disconnected: ${reason}`);
             this._cleanupSocket();
             if (!this.manualDisconnect) {
-                this._reconnect(this.apiBaseURL);
+                this._reconnect(apiUrl);
             } else {
                 this.manualDisconnect = false;
             }
@@ -128,7 +131,7 @@ class PBUI {
         console.log(`[PBUI] Reconnecting in ${delay / 1000} seconds...`);
 
         setTimeout(() => {
-            this.connect(this.apiBaseURL).catch((error) => {
+            this.connect(apiUrl).catch((error) => {
                 console.error('[PBUI] Reconnection failed:', error);
                 this.connecting = false;
             });
@@ -223,40 +226,50 @@ class PBUI {
         }
     }
 
-    setApiBase(url, endpoint = '/api') {
+    setApiBase(url) {
         if (!url) {
             console.error('[PBUI] URL not provided to set as apiBase.');
             return;
         }
         try {
             new URL(url);
-            this.apiBaseURL = url;
+            if (url.endsWith('/')) {
+                console.log(`[PBUI] API Url cannot have a trailing /`);
+                return;
+            }
+            apiUrl = url;
         } catch (error) {
             console.log(`[PBUI] Invalid URL:`, url);
         }
-        if (!endpoint.startsWith('/')) {
-            console.error(`[PBUI] apiBase endpoint must start with '/'`);
-            return;
+    }
+
+    // API outside of state
+    setAuthToken(token) {
+        this.authToken = token; // If token is invalid, that error will come when a function runs that requires auth
+    }
+
+    async upload(file, filename) {
+        const formData = new FormData();
+        formData.append('file', file, filename);
+
+        const res = await fetch(`${apiUrl}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || data.status !== 'success') {
+            throw new Error(data.error || 'Upload failed');
         }
-        this.apiEndpoint = endpoint;
+
+        return { url: data.url };
     }
 }
 
-class PBUIState {
-    constructor(url, endpoint = '/api') {
-        this.data = {};
-        this.listeners = {};
-        this.apiBaseURL = url ? `${url}${endpoint}` : 'https://api.pbui.net/api';
+class funcs {
+    constructor() {
         this.defaultHeaders = { 'Content-Type': 'application/json' };
-    }
-
-    _internalUpdate(key, value) {
-        if (!this._valueEqual(this.data[key], value)) {
-            this.data[key] = value;
-            if (this.listeners[key]) {
-                this.listeners[key].forEach(callback => callback(value));
-            }
-        }
     }
 
     _valueEqual(obj1, obj2) {
@@ -308,7 +321,7 @@ class PBUIState {
     }
 
     async _fetchData(endpoint, method = 'GET', body = null) {
-        const url = `${this.apiBaseURL}${endpoint}`;
+        const url = `${apiUrl}${endpoint}`;
         const options = {
             method,
             headers: this.defaultHeaders,
@@ -327,12 +340,29 @@ class PBUIState {
             throw error;
         }
     }
+}
+
+class PBUIState {
+    constructor() {
+        this.data = {};
+        this.listeners = {};
+        this.defaultHeaders = { 'Content-Type': 'application/json' };
+    }
+
+    _internalUpdate(key, value) {
+        if (!funcs._valueEqual(this.data[key], value)) {
+            this.data[key] = value;
+            if (this.listeners[key]) {
+                this.listeners[key].forEach(callback => callback(value));
+            }
+        }
+    }
 
     async get(key = 'state', forceFetch = true) {
         if (key === 'state') {
             if (!this.data[key] || forceFetch) {
                 console.log('[PBUI] Fetching state...');
-                const data = await this._fetchData('/state');
+                const data = await funcs._fetchData('/state');
                 console.log(`[PBUI] State fetched:`, data)
                 this._internalUpdate(key, data);
             }
@@ -354,15 +384,147 @@ class PBUIState {
         }
 
         const body = { song_states: songStates, current_flow_step: currentFlowStep };
-        const data = await this._fetchData('/update', 'POST', body);
+        const data = await funcs._fetchData('/update', 'POST', body);
         return Boolean(data.success);
     }
 
     async reset() {
         console.log('[PBUI] Resetting state...');
-        const data = await this._fetchData('/reset', 'POST');
+        const data = await funcs._fetchData('/reset', 'POST');
         console.log('[PBUI] State successfully reset!');
         return data.success;
+    }
+}
+
+class Tournaments {
+    constructor(authToken) {
+        this.authToken = authToken;
+    }
+
+    async get(tournamentId = '', params = '', logging = false) {
+        const numericRegex = /^[0-9]+$/;
+        if (tournamentId === '') {
+            if (params === '') {
+                const tourneys = await funcs._fetchData('/getTournaments');
+                if (logging) console.log(await tourneys.json());
+                return await tourneys.json();
+            } else {
+                return console.error('[PBUI] You cannot specify parameters without specifying tournamentId');
+            }
+        } else if (!slugRegex.test(tournamentId) && numericRegex.test(tournamentId)) {
+            let queryParams = '';
+            if (params !== '') queryParams = `?${params}`;
+            const tourney = await funcs._fetchData(`/getTournaments/${tournamentId}${queryParams}`);
+            if (logging) console.log(await tourney.json());
+            return await tourney.json();
+        } else if (slugRegex.test(tournamentId)) {
+            let queryParams = '';
+            if (params !== '') queryParams = `?${params}`;
+            const tourney = await funcs._fetchData(`/getTournaments/slug/${tournamentId}${queryParams}`);
+            if (logging) console.log(await tourney.json());
+            return await tourney.json();
+        } else {
+            throw new Error('[PBUI] tournamentId provided is not a valid numerical id or slug');
+        }
+    }
+
+    async getPool(poolId) {
+        const numericRegex = /^[0-9]+$/;
+
+        if (!poolId) {
+            console.error(`[PBUI] Pool ID not provided`);
+            return;
+        }
+
+        if (!numericRegex.test(poolId)) {
+            console.error(`[PBUI] Pool ID must only contain numbers`);
+            return;
+        }
+
+        const res = await funcs._fetchData(`/getPool/${poolId}`);
+        const data = await res.json();
+
+        return data;
+    }
+
+    async create(element = 'tournament', info, authToken = this.authToken) {
+        if (!info) {
+            console.error(`[PBUI] Info must be provided on the element being created`);
+        }
+
+        if (element === 'tournament' || element === 'tourney') {
+            if (!info.name || !info.slug) {
+                console.error(`[PBUI] Tournament name or slug not provided`);
+                return;
+            }
+
+            if (!slugRegex.test(info.slug)) {
+                console.error(`[PBUI] Slug provided is not a valid slug`);
+                return;
+            }
+
+            const res = await funcs._fetchData(
+                '/createTournament',
+                'POST',
+                { 
+                    name: info.name,
+                    slug: info.slug
+                }
+            );
+
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                console.log(`[PBUI] Successfully created tournament:`, data);
+            } else {
+                console.log(`[PBUI] Failed to created tournament:`, data);
+            }
+        } else if (element === 'pool') {
+            if (!info.tourneyId || !info.poolName) {
+                console.error(`[PBUI] Tournament ID or Pool Name not provided`);
+                return;
+            }
+
+            const res = await funcs._fetchData(
+                '/createTournament?pool=true',
+                'POST',
+                {
+                    tourneyId: info.tourneyId,
+                    poolName: info.poolName
+                }
+            );
+
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                console.log(`[PBUI] Successfully created tournament pool:`, data);
+            } else {
+                console.error(`[PBUI] Failed to created tournament pool:`, data);
+            }
+        } else if (element === 'map') {
+            if (!info.poolId || !info.hash || !info.diff) {
+                console.error(`[PBUI] Pool ID, map hash, or map difficulty not provided`);
+                return;
+            }
+
+            const res = await funcs._fetchData(
+                '/createTournament?map=true',
+                'POST',
+                {
+                    poolId: info.poolId,
+                    hash: info.hash,
+                    diff: info.diff
+                }
+            );
+
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                console.log(`[PBUI] Successfully created pool map:`, data);
+            } else {
+                console.error(`[PBUI] Failed to created pool map:`, data);
+            }
+        }
     }
 }
 
