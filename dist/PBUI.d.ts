@@ -6,8 +6,15 @@ declare class PBUIState {
     reset(): Promise<void>;
 }
 
+declare class Tournaments {
+    get(tournamentId?: string | number, param?: string, logging?: boolean): void;
+    getPool<T>(poolId: number): T | undefined;
+    create<T>(info: { name?: string, slug?: string, tourneyId?: number, poolName?: string, poolId?: number, hash?: string, diff?: 'Easy' | 'Normal' | 'Hard' | 'Expert' | 'ExpertPlus' }, authToken: string, element?: 'tournament' | 'pool' | 'map', ): T | undefined;
+}
+
 export declare class PBUI {
     state: PBUIState;
+    tournaments: Tournaments;
 
     connect(url?: string, options?: { transports?: string[]; secure?: boolean; timeout?: number }): Promise<void>;
     subscribe(event: string, listener: (data: any) => void): Promise<void>;
@@ -15,7 +22,9 @@ export declare class PBUI {
     disconnect(): Promise<void>;
     on(event: string, callback: (data: any) => void): void;
     send(event: string, data:any): void;
-    setApiBase(url: string, endpoint?: string): void;
+    setApiBase(url: string): void;
+    setAuthToken(token: string): void;
+    upload(file: File | Blob, filename: string): void;
 }
 
 export default PBUI;

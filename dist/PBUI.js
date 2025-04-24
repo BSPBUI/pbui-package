@@ -21,6 +21,7 @@ class PBUI {
     async connect(url, options = {}) {
         if (url) {
             this.setApiBase(url);
+            console.log(`[PBUI] apiUrl set to '${url}'. This was caused by the websocket connection url being set as '${url}'`);
         }
         this.connecting = true;
         try {
@@ -243,7 +244,7 @@ class PBUI {
         }
     }
 
-    // API outside of state
+    // Generic API
     setAuthToken(token) {
         this.authToken = token; // If token is invalid, that error will come when a function runs that requires auth
     }
@@ -401,10 +402,15 @@ class Tournaments {
         this.authToken = authToken;
     }
 
-    async get(tournamentId = '', params = '', logging = false) {
+    async get(tournamentId = '', param = '', logging = false) {
         const numericRegex = /^[0-9]+$/;
+        if (param !== '' && !param.startsWith('?')) {
+            console.error(`[PBUI] Parameter must start with "?"`);
+            return;
+        }
+
         if (tournamentId === '') {
-            if (params === '') {
+            if (param === '') {
                 const tourneys = await funcs._fetchData('/getTournaments');
                 if (logging) console.log(await tourneys.json());
                 return await tourneys.json();
@@ -412,15 +418,15 @@ class Tournaments {
                 return console.error('[PBUI] You cannot specify parameters without specifying tournamentId');
             }
         } else if (!slugRegex.test(tournamentId) && numericRegex.test(tournamentId)) {
-            let queryParams = '';
-            if (params !== '') queryParams = `?${params}`;
-            const tourney = await funcs._fetchData(`/getTournaments/${tournamentId}${queryParams}`);
+            let queryParam = '';
+            if (param !== '') queryParam = `?${param}`;
+            const tourney = await funcs._fetchData(`/getTournaments/${tournamentId}${queryParam}`);
             if (logging) console.log(await tourney.json());
             return await tourney.json();
         } else if (slugRegex.test(tournamentId)) {
-            let queryParams = '';
-            if (params !== '') queryParams = `?${params}`;
-            const tourney = await funcs._fetchData(`/getTournaments/slug/${tournamentId}${queryParams}`);
+            let queryParam = '';
+            if (param !== '') queryParam = `?${param}`;
+            const tourney = await funcs._fetchData(`/getTournaments/slug/${tournamentId}${queryParam}`);
             if (logging) console.log(await tourney.json());
             return await tourney.json();
         } else {
@@ -447,7 +453,7 @@ class Tournaments {
         return data;
     }
 
-    async create(element = 'tournament', info, authToken = this.authToken) {
+    async create(info, authToken = this.authToken, element = 'tournament', ) {
         if (!info) {
             console.error(`[PBUI] Info must be provided on the element being created`);
         }
